@@ -6,7 +6,7 @@ data Expr
   = App Expr Expr
   | Lam Char Expr
   | Var Char
-  deriving (Show)
+  deriving Show
 
 instance Eq Expr where
   (==) (Var x) (Var y) = x == y
@@ -14,10 +14,12 @@ instance Eq Expr where
   (==) (App a0 a1) (App b0 b1) = (a0 == b0) && (a1 == b1)
   (==) _ _ = False
 
--- instance Show Expr where
---   show (Var x) = [x]
---   show (Lam c e) = "(\\" ++ [c] ++ "." ++ show e ++ ")"
---   show (App e0 e1) = show e0 ++ show e1
+exprToString (Var x) = [x]
+exprToString (Lam c e) = "(\\" ++ [c] ++ "." ++ exprToString e ++ ")"
+exprToString (App e0 e1) = exprToString e0 ++ exprToString e1
+
+printExpr e = putStrLn (exprToString e)
+
 
 -- Parsing
 -- This lambda calc parser is almost exactly the same as the one
@@ -25,32 +27,32 @@ instance Eq Expr where
 -- except that it's built on the parsec library
 
 expr = atom `chainl1` return App
-
 atom = lam <|> var <|> paren
-
 lam = do
   _ <- char '\\'
   v <- lower
   _ <- char '.'
   Lam v <$> expr
-
 var = do
   Var <$> lower
-
 paren = between (char '(') (char ')') expr
 
 -- Interpreter
 -- A (overly) simple evaluator that just replaces the bound variable
 -- with the argument without any concern for name collisions
-isval (Lam _ _) = True
-isval _ = False
+isReduced (Var _) = True
+isReduced (App (Lam c e) arg) = False
+isReduced (App e0 e1) = isReduced e0 && isReduced e1
+isReduced (Lam c e) = isReduced e
 
 eval1 :: Expr -> Expr
+eval1 (App (Lam c e) arg) | not (isReduced arg) = App (Lam c e) (eval1 arg)
+                          | not (isReduced e) = App (Lam c (eval1 e)) arg
+                          | otherwise = subst c e (eval1 arg)
+eval1 (App e0 e1) | isReduced e0 = App e0 (eval1 e1)
+                  | otherwise = App (eval1 e0) e1
+eval1 (Lam c e) = Lam c (eval1 e)
 eval1 (Var x) = Var x
-eval1 (App (Lam c e) arg) | isval arg = eval1 (subst c e arg)
-eval1 (App v0 e1) | isval v0 = App v0 (eval1 e1)
-eval1 (App e0 e1) = App (eval1 e0) e1
-eval1 e = e
 
 eval e | e == t' = t'
        | otherwise = eval t'
@@ -63,11 +65,6 @@ subst v (Var x) arg
 subst v (Lam c e) arg = Lam c (subst v e arg)
 subst v (App e0 e1) arg = App (subst v e0 arg) (subst v e1 arg)
 
--- Testing Expressions
--- identity = Lam 'x' (Var 'x')
--- zero = Lam 'a' (Lam 'b' (Var 'b'))
--- succ = Lam 'n' (Lam 'f' (Lam 'x' (App (Var 'f') (App (Var 'n') (App (Var 'f') (Var 'x'))))))
--- one = App Main.succ zero
 
 -- Printing Lambda Terms
 -- generating an infinite amount of variable names
@@ -86,4 +83,4 @@ main = do
   let tree = parse expr "" contents
   case tree of
     Left err -> print err
-    Right e -> print (eval e)
+    Right e -> printExpr e >> printExpr (eval e)
